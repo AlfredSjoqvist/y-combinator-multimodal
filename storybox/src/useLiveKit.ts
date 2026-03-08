@@ -51,9 +51,16 @@ export function useLiveKit({ url, token }: UseLiveKitOptions) {
       return
     }
 
-    // If a connection is already in progress, wait for it
+    // If a connection is already in progress, wait for it and then sync state
     if (_connectPromise) {
-      console.log('[LiveKit] Connection already in progress, skipping')
+      console.log('[LiveKit] Connection already in progress, waiting...')
+      roomRef.current = _room
+      _connectPromise.then(() => {
+        if (_room && _room.state === 'connected') {
+          console.log('[LiveKit] Syncing state after in-progress connect')
+          setConnected(true)
+        }
+      })
       return
     }
 

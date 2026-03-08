@@ -85,12 +85,13 @@ def main():
     test_token = cache["test_token"]
     display_token = cache["display_token"]
 
-    # Only write .env.local if it doesn't exist yet
+    # Only write .env.local if it doesn't exist yet (manual edits preserved)
     env_path = os.path.join(os.path.dirname(__file__), "..", "storybox", ".env.local")
     if not os.path.exists(env_path):
         with open(env_path, "w") as f:
             f.write(f"VITE_LIVEKIT_URL={url}\n")
             f.write(f"VITE_LIVEKIT_TOKEN={display_token}\n")
+            f.write(f"VITE_PHONE_TOKEN={phone_token}\n")
         print("  Wrote new .env.local")
     else:
         print("  .env.local already exists, not overwriting")

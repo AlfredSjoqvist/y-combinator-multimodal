@@ -100,12 +100,16 @@ export default function App() {
   }, [enableMicrophone, sendToAgent])
 
   const handleTakePicture = useCallback((imageDataUrl: string) => {
-    setUploadedImage(imageDataUrl)
+    setUploadedImage(imageDataUrl || null)
     setTestMode(false)
     setUseHardcodedStory(false)
+  }, [])
+
+  const handleCreateAdventure = useCallback(() => {
+    if (!uploadedImage) return
     sendToAgent({ type: 'capture_taken' })
     setScreen('generating')
-  }, [sendToAgent])
+  }, [uploadedImage, sendToAgent])
 
   const handleTestPipeline = useCallback(async () => {
     // Load mock.jpg from public dir, convert to data URL, run real pipeline
@@ -299,9 +303,9 @@ export default function App() {
             storyConcept={storyPrompt}
             onStoryConceptChange={setStoryPrompt}
             onTakePicture={handleTakePicture}
-            onTestAnimation={handleTestAnimation}
-            onTestPipeline={handleTestPipeline}
-            onTestStoryboard={handleTestStoryboard}
+            uploadedImage={uploadedImage}
+            onCreateAdventure={handleCreateAdventure}
+            phoneUrl={`https://meet.livekit.io/custom?liveKitUrl=${encodeURIComponent(lkParams.url)}&token=${import.meta.env.VITE_PHONE_TOKEN || ''}`}
           />
         )}
         {screen === 'generating' && uploadedImage && (

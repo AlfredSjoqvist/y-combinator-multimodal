@@ -1,8 +1,6 @@
 """
-Direct agent runner - bypasses cli.run_app subprocess spawning.
-Use this if 'python agent.py dev' shows no output on Windows.
-
-Usage: python agent_direct.py
+Direct agent runner - connects to LiveKit room and runs Gemini Realtime.
+Usage: python -u agent_direct.py
 """
 
 import asyncio
@@ -13,11 +11,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(name)s %(message)s")
+# Only show our logs + important livekit logs, not websocket frame spam
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+logging.getLogger("websockets").setLevel(logging.WARNING)
+logging.getLogger("livekit").setLevel(logging.WARNING)
+logging.getLogger("livekit.agents").setLevel(logging.INFO)
+logging.getLogger("livekit.plugins.google").setLevel(logging.INFO)
 logger = logging.getLogger("storybox-sage")
+logger.setLevel(logging.INFO)
 
 from livekit import rtc, api
-from livekit.agents import Agent, AgentSession, JobContext, function_tool
+from livekit.agents import Agent, AgentSession, function_tool
 from livekit.agents.voice.events import RunContext
 from livekit.agents.voice.room_io import RoomOutputOptions, RoomInputOptions
 from livekit.plugins import google
@@ -52,7 +56,7 @@ async def send_command(command: dict):
     try:
         data = json.dumps(command).encode("utf-8")
         await _room_ref.local_participant.publish_data(data, reliable=True)
-        logger.info(f"Sent to frontend: {command}")
+        logger.info(f">> Sent: {command['type']}: {command.get('text', '')[:80]}")
     except Exception as e:
         logger.error(f"Failed to send command: {e}")
 
@@ -68,7 +72,7 @@ class StoryboxSage(Agent):
         Args:
             summary: A descriptive summary of the story concept so far. Include visual details, atmosphere, style, characters, setting, and plot points.
         """
-        logger.info(f">>> STORY SUMMARY UPDATE: {summary}")
+        logger.info(f">> SUMMARY: {summary[:100]}...")
         await send_command({"type": "wizard_status", "text": summary})
         return f"Summary updated: {summary}"
 
@@ -80,47 +84,40 @@ async def main():
     api_key = os.environ["LIVEKIT_API_KEY"]
     api_secret = os.environ["LIVEKIT_API_SECRET"]
 
-    logger.info(f"Connecting to {url} as agent...")
+    logger.info(f"Connecting to {url}...")
 
-    # Generate agent token
     token = (
         api.AccessToken(api_key, api_secret)
         .with_identity("agent")
         .with_name("Storybox Agent")
         .with_kind("agent")
         .with_grants(api.VideoGrants(
-            room_join=True,
-            room="storybox",
-            can_subscribe=True,
-            can_publish=True,
-            can_publish_data=True,
+            room_join=True, room="storybox",
+            can_subscribe=True, can_publish=True, can_publish_data=True,
         ))
     ).to_jwt()
 
-    # Connect directly to the room
     room = rtc.Room()
     _room_ref = room
 
     @room.on("participant_connected")
-    def on_participant_connected(participant):
-        logger.info(f"Participant connected: {participant.identity}")
+    def on_pc(p):
+        logger.info(f"+ {p.identity} joined")
 
     @room.on("participant_disconnected")
-    def on_participant_disconnected(participant):
-        logger.info(f"Participant disconnected: {participant.identity}")
+    def on_pd(p):
+        logger.info(f"- {p.identity} left")
 
     @room.on("track_subscribed")
-    def on_track_sub(track, pub, participant):
-        logger.info(f"Track subscribed: kind={track.kind} from={participant.identity}")
+    def on_ts(track, pub, p):
+        kind = "audio" if track.kind == 1 else "video"
+        logger.info(f"  Track: {kind} from {p.identity}")
 
     await room.connect(url, token)
-    logger.info(f"Connected to room: {room.name}")
-    logger.info(f"Local participant: {room.local_participant.identity}")
+    logger.info(f"Connected! Room: {room.name}")
+    for _, p in room.remote_participants.items():
+        logger.info(f"  Already here: {p.identity}")
 
-    for pid, p in room.remote_participants.items():
-        logger.info(f"  Remote participant: {p.identity}")
-
-    # Create Gemini model
     model = google.realtime.RealtimeModel(
         voice="Charon",
         instructions=SAGE_SYSTEM_PROMPT,
@@ -128,7 +125,6 @@ async def main():
         input_audio_transcription=genai_types.AudioTranscriptionConfig(),
         output_audio_transcription=genai_types.AudioTranscriptionConfig(),
     )
-    logger.info("Gemini Realtime model created")
 
     session = AgentSession(
         llm=model,
@@ -136,21 +132,19 @@ async def main():
         min_endpointing_delay=0.3,
     )
 
-    # Data messages from frontend
     @room.on("data_received")
     def on_data_received(data: rtc.DataPacket):
         try:
             msg = json.loads(data.data.decode("utf-8"))
-            logger.info(f"Data from frontend: {msg}")
+            logger.info(f"<< Data: {msg.get('type')}")
             if msg.get("type") == "say_hi":
                 session.generate_reply(instructions="Say exactly: 'Tell me a story.' Nothing else.")
             elif msg.get("type") == "capture_taken":
                 session.generate_reply(instructions="Say exactly: 'Alright, let the adventure begin!' with excitement.")
         except Exception as e:
-            logger.error(f"Error handling data: {e}", exc_info=True)
+            logger.error(f"Error: {e}", exc_info=True)
 
     sage = StoryboxSage()
-    logger.info("Starting agent session...")
 
     await session.start(
         room=room,
@@ -162,12 +156,12 @@ async def main():
             sync_transcription=False,
         ),
     )
-    logger.info("=== Agent session started! ===")
+    logger.info("=== AGENT READY ===")
 
     await send_command({"type": "wizard_status", "text": "The Sage is listening..."})
     session.generate_reply(instructions="Say exactly: 'Tell me a story.' Nothing else.")
 
-    # Keep running
+    # Keep alive
     try:
         while True:
             await asyncio.sleep(1)
