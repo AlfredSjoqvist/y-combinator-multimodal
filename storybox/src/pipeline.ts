@@ -1047,14 +1047,15 @@ export async function runPipeline(
   }
   onProgress({ stepId: 'voices', status: 'done', data: audioMap.size })
 
-  // Step 12: Music — pick a random track from /music/
+  // Step 12: Music — select ambient track
   onProgress({ stepId: 'music', status: 'start' })
   let audioUrl: string | null = null
+  const base = import.meta.env.BASE_URL || '/'
   const MUSIC_TRACKS = [
-    '/music/1.mp3', '/music/2.mp3', '/music/3.mp3',
-    '/music/4.mp3', '/music/5.mp3', '/music/6.mp3',
-    '/music/7.mp3', '/music/8.mp3', '/music/9.mp3',
-    '/music/10.mp3',
+    `${base}assets-a/1.mp3`, `${base}assets-a/2.mp3`, `${base}assets-a/3.mp3`,
+    `${base}assets-a/4.mp3`, `${base}assets-a/5.mp3`, `${base}assets-a/6.mp3`,
+    `${base}assets-a/7.mp3`, `${base}assets-a/8.mp3`, `${base}assets-a/9.mp3`,
+    `${base}assets-a/10.mp3`,
   ]
   const randomTrack = MUSIC_TRACKS[Math.floor(Math.random() * MUSIC_TRACKS.length)]
   console.log(`[Pipeline] Picking random music track: ${randomTrack}`)

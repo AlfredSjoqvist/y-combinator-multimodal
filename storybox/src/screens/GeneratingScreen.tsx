@@ -14,11 +14,12 @@ interface Props {
 
 type ModelType = 'gemini' | 'nanobanana' | 'lyria' | 'livekit'
 
+const base = import.meta.env.BASE_URL || '/'
 const MODELS: Record<ModelType, { name: string; color: string; dim: string; label: string; logo: string }> = {
-  gemini:     { name: 'Gemini 3.1',    color: '#4db8cc', dim: '#1a3a44', label: 'Vision & Reasoning', logo: '/gemini.png' },
-  nanobanana: { name: 'NanoBanana 2',  color: '#e88a20', dim: '#3a2800', label: 'Image Generation',   logo: '/nanobanana.png' },
-  lyria:      { name: 'Lyria',         color: '#cc5588', dim: '#3a1428', label: 'Music & Audio',       logo: '/lyria.png' },
-  livekit:    { name: 'LiveKit',       color: '#7c3aed', dim: '#2a1452', label: 'Realtime Voice',     logo: '/livekit.png' },
+  gemini:     { name: 'Gemini 3.1',    color: '#4db8cc', dim: '#1a3a44', label: 'Vision & Reasoning', logo: `${base}gemini.png` },
+  nanobanana: { name: 'NanoBanana 2',  color: '#e88a20', dim: '#3a2800', label: 'Image Generation',   logo: `${base}nanobanana.png` },
+  lyria:      { name: 'Lyria',         color: '#cc5588', dim: '#3a1428', label: 'Music & Audio',       logo: `${base}lyria.png` },
+  livekit:    { name: 'LiveKit',       color: '#7c3aed', dim: '#2a1452', label: 'Realtime Voice',     logo: `${base}livekit.png` },
 }
 
 // ─── Pipeline steps ───

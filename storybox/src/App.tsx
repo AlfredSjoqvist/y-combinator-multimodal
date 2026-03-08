@@ -72,7 +72,7 @@ export default function App() {
         if (screen !== 'upload' && screen !== 'cover') return
         console.log('[App] G pressed — launching hardcoded storyboard mode')
         // Load demo image and start pipeline with hardcoded story
-        fetch('/demo-input.jpg')
+        fetch(`${import.meta.env.BASE_URL}demo-input.jpg`)
           .then(r => r.blob())
           .then(blob => {
             const reader = new FileReader()
@@ -92,12 +92,10 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [screen])
 
-  const handleStart = useCallback(async () => {
-    // Enable mic on user gesture - required by browser autoplay policy
-    await enableMicrophone()
+  const handleStart = useCallback(() => {
     setScreen('upload')
     sendToAgent({ type: 'say_hi' })
-  }, [enableMicrophone, sendToAgent])
+  }, [sendToAgent])
 
   const handleTakePicture = useCallback((imageDataUrl: string) => {
     setUploadedImage(imageDataUrl || null)
@@ -114,7 +112,7 @@ export default function App() {
   const handleTestPipeline = useCallback(async () => {
     // Load mock.jpg from public dir, convert to data URL, run real pipeline
     try {
-      const resp = await fetch('/demo-input.jpg')
+      const resp = await fetch(`${import.meta.env.BASE_URL}demo-input.jpg`)
       const blob = await resp.blob()
       const reader = new FileReader()
       reader.onload = () => {
@@ -271,20 +269,6 @@ export default function App() {
           <span style={{ fontSize: 12, color: '#888', fontWeight: 500 }}>
             {connected ? 'Sage Connected' : 'Connecting...'}
           </span>
-        </div>
-      )}
-
-      {/* Wizard status text - show on generating/playback/gallery screens */}
-      {wizardStatus && connected && screen !== 'upload' && screen !== 'cover' && (
-        <div style={{
-          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 1000, padding: '10px 24px', borderRadius: 12,
-          background: 'rgba(10,10,15,0.9)', border: '1px solid rgba(201,162,39,0.15)',
-          backdropFilter: 'blur(8px)',
-          fontSize: 14, color: '#c9a227', fontWeight: 500,
-          fontStyle: 'italic',
-        }}>
-          {wizardStatus}
         </div>
       )}
 

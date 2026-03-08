@@ -1,0 +1,16 @@
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+
+# Token caches
+.token_cache.json
+
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Node
+node_modules/
+dist/

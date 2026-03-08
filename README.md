@@ -226,6 +226,12 @@ y-combinator-multimodal/
 
 ---
 
+## Live Demo
+
+Try it out at **[alfredsjoqvist.com/storybox](https://alfredsjoqvist.com/storybox)**
+
+---
+
 ## Built By
 
 Alfred Sjoqvist — CS/Engineering master's student at Stanford (exchange from Sweden). Built solo in 6.5 hours at the YC x Google DeepMind Multimodal Frontier Hackathon, San Francisco, March 2026.

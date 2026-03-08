@@ -189,24 +189,6 @@ export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConce
             The Sage listens and summarizes here. You can also edit directly.
           </div>
 
-          {/* Phone URL box */}
-          {phoneUrl && (
-            <div style={S.phoneUrlBox}>
-              <div style={S.phoneUrlLabel}>Join from phone (camera + mic)</div>
-              <div style={S.phoneUrlRow}>
-                <input
-                  type="text"
-                  readOnly
-                  value={phoneUrl}
-                  style={S.phoneUrlInput}
-                  onClick={e => (e.target as HTMLInputElement).select()}
-                />
-                <button onClick={handleCopyUrl} style={S.copyBtn}>
-                  {copied ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </motion.div>
 
@@ -222,7 +204,7 @@ export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConce
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
-        style={{ display: 'flex', gap: 12, zIndex: 1 }}
+        style={{ display: 'flex', gap: 12, zIndex: 1, justifyContent: 'center', flexWrap: 'wrap' as const }}
       >
         <motion.button
           whileHover={{ scale: 1.03 }}
@@ -267,6 +249,30 @@ export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConce
           Create Adventure
         </motion.button>
       </motion.div>
+
+      {/* Phone URL box — below buttons */}
+      {phoneUrl && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          style={S.phoneUrlBox}
+        >
+          <div style={S.phoneUrlLabel}>Join from phone with LiveKit (camera + mic)</div>
+          <div style={S.phoneUrlRow}>
+            <input
+              type="text"
+              readOnly
+              value={phoneUrl}
+              style={S.phoneUrlInput}
+              onClick={e => (e.target as HTMLInputElement).select()}
+            />
+            <button onClick={handleCopyUrl} style={S.copyBtn}>
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+        </motion.div>
+      )}
 
     </motion.div>
   )
@@ -370,32 +376,31 @@ const S: Record<string, React.CSSProperties> = {
     paddingTop: 12,
   },
   phoneUrlBox: {
-    borderTop: '1px solid rgba(255,255,255,0.04)',
-    paddingTop: 12,
-    display: 'flex', flexDirection: 'column', gap: 6,
+    display: 'flex', flexDirection: 'column', gap: 8,
+    zIndex: 1, marginTop: 4, width: '100%', maxWidth: 700,
   },
   phoneUrlLabel: {
-    fontSize: 11, fontWeight: 600, color: '#555',
+    fontSize: 14, fontWeight: 600, color: '#555',
     textTransform: 'uppercase', letterSpacing: '0.08em',
   },
   phoneUrlRow: {
-    display: 'flex', gap: 8,
+    display: 'flex', gap: 10,
   },
   phoneUrlInput: {
     flex: 1,
-    fontSize: 11, color: '#888',
+    fontSize: 14, color: '#888',
     fontFamily: 'monospace',
     background: 'rgba(0,0,0,0.3)',
     border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 6,
-    padding: '6px 10px',
+    borderRadius: 8,
+    padding: '12px 16px',
     outline: 'none',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
   },
   copyBtn: {
-    fontFamily: "'Space Grotesk', sans-serif", fontSize: 11, fontWeight: 600,
-    color: '#c9a227', padding: '6px 14px', borderRadius: 6,
+    fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, fontWeight: 600,
+    color: '#c9a227', padding: '12px 20px', borderRadius: 8,
     background: 'rgba(201,162,39,0.1)',
     border: '1px solid rgba(201,162,39,0.2)',
     cursor: 'pointer',
