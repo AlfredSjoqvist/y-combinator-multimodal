@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Howl } from 'howler'
-import type { StoryResult, DialogueLine } from '../types'
+import type { StoryResult, DialogueLine, Language } from '../types'
 
 interface Props {
   story: StoryResult
   sendToAgent: (data: Record<string, unknown>) => void
+  language?: Language
   onComplete: () => void
 }
 
-const PANEL_DURATION = 20000 // 20 seconds per panel
+const PANEL_MAX_DURATION = 20000 // max 20 seconds per panel (safety fallback)
+const POST_DIALOGUE_DELAY = 5000 // 5 seconds after last dialogue finishes
 
 /** Play a pre-generated audio data URL and return a cleanup function */
 function playAudioClip(audioUrl: string): { stop: () => void; promise: Promise<void> } {
@@ -26,17 +28,38 @@ function playAudioClip(audioUrl: string): { stop: () => void; promise: Promise<v
   }
 }
 
-export function PlaybackScreen({ story, sendToAgent, onComplete }: Props) {
+export function PlaybackScreen({ story, sendToAgent, language = 'en', onComplete }: Props) {
+  const sv = language === 'sv'
+  const [audioUnlocked, setAudioUnlocked] = useState(false)
   const [currentPanel, setCurrentPanel] = useState(-1) // -1 = title card
   const [showDialogue, setShowDialogue] = useState(false)
   const [activeDialogueIdx, setActiveDialogueIdx] = useState(-1)
+  const [dialoguesDone, setDialoguesDone] = useState(false)
   const howlRef = useRef<Howl | null>(null)
   const nativeAudioRef = useRef<HTMLAudioElement | null>(null)
   const dialogueCleanupRef = useRef<(() => void) | null>(null)
   const dialogueCancelledRef = useRef(false)
 
-  // Background music
+  // Check if audio can autoplay — if not, show a tap-to-start gate
   useEffect(() => {
+    const testAudio = new Audio()
+    // Try a silent play to check autoplay policy
+    testAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
+    testAudio.volume = 0
+    testAudio.play().then(() => {
+      testAudio.pause()
+      console.log('[Playback] Audio autoplay allowed')
+      setAudioUnlocked(true)
+    }).catch(() => {
+      console.log('[Playback] Audio autoplay blocked — showing tap gate')
+      // audioUnlocked stays false, showing the gate
+    })
+    return () => { testAudio.pause(); testAudio.src = '' }
+  }, [])
+
+  // Background music — only start after audio is unlocked
+  useEffect(() => {
+    if (!audioUnlocked) return
     if (!story.audioUrl) {
       console.log('[Playback] No audio URL, skipping music')
       return
@@ -109,12 +132,13 @@ export function PlaybackScreen({ story, sendToAgent, onComplete }: Props) {
       if (nativeAudio) { nativeAudio.pause(); nativeAudio.src = '' }
       nativeAudioRef.current = null
     }
-  }, [story.audioUrl])
+  }, [story.audioUrl, audioUnlocked])
 
   // Play dialogue audio clips sequentially when panel changes
   useEffect(() => {
     if (currentPanel < 0) return
     const panel = story.panels[currentPanel]
+    setDialoguesDone(!panel?.dialogues?.length)
     if (!panel?.dialogues?.length) return
 
     dialogueCancelledRef.current = false
@@ -154,6 +178,7 @@ export function PlaybackScreen({ story, sendToAgent, onComplete }: Props) {
 
       if (!cancelled && !dialogueCancelledRef.current) {
         setActiveDialogueIdx(-1)
+        setDialoguesDone(true)
       }
     }
 
@@ -207,23 +232,29 @@ export function PlaybackScreen({ story, sendToAgent, onComplete }: Props) {
     }
   }, [currentPanel, story.panels.length, onComplete, stopDialogue])
 
-  // Auto-advance timer
+  // Auto-advance: title card after 2.5s, panels 5s after dialogues finish (max 20s safety)
   useEffect(() => {
+    if (!audioUnlocked) return
     if (currentPanel === -1) {
-      const timer = setTimeout(() => {
-        setCurrentPanel(0)
-      }, 2500)
+      const timer = setTimeout(() => setCurrentPanel(0), 2500)
       return () => clearTimeout(timer)
     }
-    const timer = setTimeout(advancePanel, PANEL_DURATION)
-    return () => clearTimeout(timer)
-  }, [currentPanel, advancePanel])
+    // Safety max timer
+    const maxTimer = setTimeout(advancePanel, PANEL_MAX_DURATION)
+    return () => clearTimeout(maxTimer)
+  }, [currentPanel, advancePanel, audioUnlocked])
 
-  // K key to skip
+  // Advance 5s after dialogues finish
+  useEffect(() => {
+    if (!audioUnlocked || currentPanel < 0 || !dialoguesDone) return
+    const timer = setTimeout(advancePanel, POST_DIALOGUE_DELAY)
+    return () => clearTimeout(timer)
+  }, [dialoguesDone, currentPanel, advancePanel, audioUnlocked])
+
+  // J key to skip panel
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'k' || e.key === 'K') {
-        console.log('[Playback] K pressed — skipping panel')
+      if (e.key === 'j' || e.key === 'J') {
         advancePanel()
       }
     }
@@ -247,6 +278,59 @@ export function PlaybackScreen({ story, sendToAgent, onComplete }: Props) {
   }, [stopDialogue])
 
   const panel = currentPanel >= 0 ? story.panels[currentPanel] : null
+
+  // Tap-to-start gate when audio autoplay is blocked
+  if (!audioUnlocked) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+        onClick={() => setAudioUnlocked(true)}
+        style={{
+          ...styles.container,
+          cursor: 'pointer',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20,
+        }}
+      >
+        <h1 style={{
+          fontFamily: "'Cinzel Decorative', 'Cinzel', serif",
+          fontSize: 42,
+          fontWeight: 700,
+          textAlign: 'center',
+          background: 'linear-gradient(135deg, #f5e6c4, #c9a227, #d4a844)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          maxWidth: 600,
+          letterSpacing: '0.04em',
+          margin: 0,
+        }}>{story.title}</h1>
+        <p style={{
+          fontFamily: "'Cinzel', serif",
+          fontSize: 14,
+          fontWeight: 600,
+          color: '#6b6455',
+          textTransform: 'uppercase',
+          letterSpacing: '0.2em',
+          margin: 0,
+        }}>{story.genre}</p>
+        <motion.div
+          animate={{ opacity: [0.4, 1, 0.4] }}
+          transition={{ duration: 2, repeat: Infinity }}
+          style={{
+            marginTop: 24,
+            fontFamily: "'Cinzel', serif",
+            fontSize: 18,
+            color: '#c9a227',
+            fontWeight: 500,
+            letterSpacing: '0.05em',
+          }}
+        >
+          {sv ? 'Tryck för att spela' : 'Tap to play'}
+        </motion.div>
+      </motion.div>
+    )
+  }
 
   return (
     <motion.div
@@ -282,7 +366,7 @@ export function PlaybackScreen({ story, sendToAgent, onComplete }: Props) {
             {/* Panel image with Ken Burns */}
             <motion.div
               animate={{ scale: [1, 1.08] }}
-              transition={{ duration: PANEL_DURATION / 1000, ease: 'linear' }}
+              transition={{ duration: PANEL_MAX_DURATION / 1000, ease: 'linear' }}
               style={styles.panelImageWrapper}
             >
               <img src={panel.imageUrl} alt={`Panel ${currentPanel + 1}`} style={styles.panelImage} />
@@ -309,9 +393,7 @@ export function PlaybackScreen({ story, sendToAgent, onComplete }: Props) {
                   transition={{ duration: 0.5, delay: 0.15 }}
                   style={styles.narration}
                 >
-                  {panel.narration && panel.narration.length > 120
-                    ? panel.narration.slice(0, 117) + '...'
-                    : panel.narration}
+                  {panel.narration}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -377,7 +459,7 @@ export function PlaybackScreen({ story, sendToAgent, onComplete }: Props) {
               transition={{ delay: 3 }}
               style={styles.skipHint}
             >
-              Press K to skip
+              {sv ? 'Tryck K för att hoppa över' : 'Press K to skip'}
             </motion.div>
           </motion.div>
         ) : null}

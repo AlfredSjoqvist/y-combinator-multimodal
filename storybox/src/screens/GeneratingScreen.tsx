@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { GENRES, type Genre, type StoryResult } from '../types'
+import { GENRES, type Genre, type StoryResult, type Language } from '../types'
 import { runPipeline, type PipelineProgress } from '../pipeline'
 
 interface Props {
@@ -9,74 +9,80 @@ interface Props {
   prompt: string
   testMode?: boolean
   useHardcodedStory?: boolean
+  language?: Language
   onComplete: (result: StoryResult) => void
 }
 
 type ModelType = 'gemini' | 'nanobanana' | 'lyria' | 'livekit'
 
 const base = import.meta.env.BASE_URL || '/'
-const MODELS: Record<ModelType, { name: string; color: string; dim: string; label: string; logo: string }> = {
-  gemini:     { name: 'Gemini 3.1',    color: '#4db8cc', dim: '#1a3a44', label: 'Vision & Reasoning', logo: `${base}gemini.png` },
-  nanobanana: { name: 'NanoBanana 2',  color: '#e88a20', dim: '#3a2800', label: 'Image Generation',   logo: `${base}nanobanana.png` },
-  lyria:      { name: 'Lyria',         color: '#cc5588', dim: '#3a1428', label: 'Music & Audio',       logo: `${base}lyria.png` },
-  livekit:    { name: 'LiveKit',       color: '#7c3aed', dim: '#2a1452', label: 'Realtime Voice',     logo: `${base}livekit.png` },
+type ModelInfo = { name: string; color: string; dim: string; label: string; labelSv: string; logo: string }
+const MODELS: Record<ModelType, ModelInfo> = {
+  gemini:     { name: 'Gemini 3.1',    color: '#4db8cc', dim: '#1a3a44', label: 'Vision & Reasoning', labelSv: 'Syn & Resonemang', logo: `${base}gemini.png` },
+  nanobanana: { name: 'NanoBanana 2',  color: '#e88a20', dim: '#3a2800', label: 'Image Generation',   labelSv: 'Bildgenerering',   logo: `${base}nanobanana.png` },
+  lyria:      { name: 'Lyria',         color: '#cc5588', dim: '#3a1428', label: 'Music & Audio',       labelSv: 'Musik & Ljud',     logo: `${base}lyria.png` },
+  livekit:    { name: 'LiveKit',       color: '#7c3aed', dim: '#2a1452', label: 'Realtime Voice',     labelSv: 'Realtidsröst',     logo: `${base}livekit.png` },
 }
 
 // ─── Pipeline steps ───
 // Each output is either a text label or an image reference (prefixed with "img:")
 
 interface Step {
-  id: string; title: string; model: ModelType | null; duration: number
-  desc: string; outputs: string[]
+  id: string; title: string; titleSv: string; model: ModelType | null; duration: number
+  desc: string; descSv: string; outputs: string[]; outputsSv: string[]
 }
 
 function buildPipeline(): Step[] {
   return [
-    { id: 'input', title: 'Initialize Pipeline', model: null, duration: 1400,
-      desc: 'Ingesting',
-      outputs: ['img:photo', 'Prompt'] },
-    { id: 'scan', title: 'Agentic Vision Decomposition', model: 'gemini', duration: 3500,
-      desc: 'Agentic-visioning',
-      outputs: ['Characters', 'Scene Graph', 'Narrative Seed', 'img:photo'] },
-    { id: 'storyboard', title: 'Long-Context Storyboarding', model: 'gemini', duration: 4000,
-      desc: 'Long-context plotting',
-      outputs: ['Panel 1 Brief', 'Panel 2 Brief', 'Panel 3 Brief', 'Panel 4 Brief', 'Panel 5 Brief', 'Panel 6 Brief', 'Story Arc'] },
-    { id: 'p1', title: 'Panel 1 - Character Lock', model: 'nanobanana', duration: 4000,
-      desc: 'Identity-locking',
-      outputs: ['img:p1', 'Panel 1 Brief'] },
-    { id: 'r1', title: 'Agentic Consistency Review', model: 'gemini', duration: 2000,
-      desc: 'Cross-modal verifying',
-      outputs: ['img:p1', 'Adjusted Brief 2', 'Character Notes'] },
-    { id: 'p2', title: 'Panel 2 - Multi-Reference', model: 'nanobanana', duration: 4500,
-      desc: 'Context-chaining',
-      outputs: ['img:p1', 'img:p2', 'Panel 2 Brief'] },
-    { id: 'r2', title: 'Agentic Arc Refinement', model: 'gemini', duration: 2000,
-      desc: 'Agentic-replanning',
-      outputs: ['img:p1', 'img:p2', 'Adjusted Brief 3', 'Arc Update'] },
-    { id: 'p3', title: 'Panel 3 - Context Chain', model: 'nanobanana', duration: 4500,
-      desc: 'Multi-referencing',
-      outputs: ['img:p1', 'img:p2', 'img:p3', 'Panel 3 Brief'] },
-    { id: 'p4', title: 'Panel 4 - Context Chain', model: 'nanobanana', duration: 4500,
-      desc: 'Fidelity-maximizing',
-      outputs: ['img:p1', 'img:p2', 'img:p3', 'img:p4', 'Panel 4 Brief'] },
-    { id: 'p5', title: 'Panel 5 - Context Chain', model: 'nanobanana', duration: 4500,
-      desc: 'Sub-pixel preserving',
-      outputs: ['img:p1', 'img:p2', 'img:p3', 'img:p4', 'img:p5', 'Panel 5 Brief'] },
-    { id: 'p6', title: 'Panel 6 - Full Context', model: 'nanobanana', duration: 4500,
-      desc: 'Full-context rendering',
-      outputs: ['img:p1', 'img:p2', 'img:p3', 'img:p4', 'img:p5', 'img:p6'] },
-    { id: 'polish', title: '1M-Token Script Refinement', model: 'gemini', duration: 3000,
-      desc: 'Million-token polishing',
-      outputs: ['img:p1', 'img:p2', 'img:p3', 'img:p4', 'img:p5', 'img:p6', 'Dialogues', 'Narrations', 'Title'] },
-    { id: 'voices', title: 'Cloning Voices from LiveKit Call', model: 'livekit', duration: 5000,
-      desc: 'Voice-cloning',
-      outputs: ['Participant Voiceprints', 'Character Voice Map', 'Dialogue Audio'] },
-    { id: 'music', title: 'Original Score Composition', model: 'lyria', duration: 2000,
-      desc: 'Scoring',
-      outputs: ['Orchestral Score', 'Ambient Layers'] },
-    { id: 'cinema', title: 'Final Assembly', model: null, duration: 2000,
-      desc: 'Assembling',
-      outputs: ['Complete Story'] },
+    { id: 'input', title: 'Initialize Pipeline', titleSv: 'Starta maskineriet', model: null, duration: 1400,
+      desc: 'Ingesting', descSv: 'Matar in',
+      outputs: ['img:photo', 'Prompt'], outputsSv: ['img:photo', 'Instruktion'] },
+    { id: 'scan', title: 'Agentic Vision Decomposition', titleSv: 'Agentisk synuppdelning', model: 'gemini', duration: 3500,
+      desc: 'Agentic-visioning', descSv: 'Stirrar intensivt',
+      outputs: ['Characters', 'Scene Graph', 'Narrative Seed', 'img:photo'],
+      outputsSv: ['Karaktärer', 'Scengraf', 'Berättelsefrö', 'img:photo'] },
+    { id: 'storyboard', title: 'Long-Context Storyboarding', titleSv: 'Långkontext-storyboarding', model: 'gemini', duration: 4000,
+      desc: 'Long-context plotting', descSv: 'Smider ränker',
+      outputs: ['Panel 1 Brief', 'Panel 2 Brief', 'Panel 3 Brief', 'Panel 4 Brief', 'Panel 5 Brief', 'Panel 6 Brief', 'Story Arc'],
+      outputsSv: ['Panel 1', 'Panel 2', 'Panel 3', 'Panel 4', 'Panel 5', 'Panel 6', 'Berättelsebåge'] },
+    { id: 'p1', title: 'Panel 1 - Character Lock', titleSv: 'Panel 1 - Karaktärslås', model: 'nanobanana', duration: 4000,
+      desc: 'Identity-locking', descSv: 'Låser identiteter',
+      outputs: ['img:p1', 'Panel 1 Brief'], outputsSv: ['img:p1', 'Panel 1'] },
+    { id: 'r1', title: 'Agentic Consistency Review', titleSv: 'Agentisk kvalitetskontroll', model: 'gemini', duration: 2000,
+      desc: 'Cross-modal verifying', descSv: 'Dubbelkollar allting',
+      outputs: ['img:p1', 'Adjusted Brief 2', 'Character Notes'], outputsSv: ['img:p1', 'Justerad brief 2', 'Karaktärsnoter'] },
+    { id: 'p2', title: 'Panel 2 - Multi-Reference', titleSv: 'Panel 2 - Multireferens', model: 'nanobanana', duration: 4500,
+      desc: 'Context-chaining', descSv: 'Kedjar kontext',
+      outputs: ['img:p1', 'img:p2', 'Panel 2 Brief'], outputsSv: ['img:p1', 'img:p2', 'Panel 2'] },
+    { id: 'r2', title: 'Agentic Arc Refinement', titleSv: 'Agentisk handlingsjustering', model: 'gemini', duration: 2000,
+      desc: 'Agentic-replanning', descSv: 'Tänker om lite',
+      outputs: ['img:p1', 'img:p2', 'Adjusted Brief 3', 'Arc Update'], outputsSv: ['img:p1', 'img:p2', 'Justerad brief 3', 'Båguppdatering'] },
+    { id: 'p3', title: 'Panel 3 - Context Chain', titleSv: 'Panel 3 - Kontextkedja', model: 'nanobanana', duration: 4500,
+      desc: 'Multi-referencing', descSv: 'Jonglerar kontext',
+      outputs: ['img:p1', 'img:p2', 'img:p3', 'Panel 3 Brief'], outputsSv: ['img:p1', 'img:p2', 'img:p3', 'Panel 3'] },
+    { id: 'p4', title: 'Panel 4 - Context Chain', titleSv: 'Panel 4 - Kontextkedja', model: 'nanobanana', duration: 4500,
+      desc: 'Fidelity-maximizing', descSv: 'Maximerar trohet',
+      outputs: ['img:p1', 'img:p2', 'img:p3', 'img:p4', 'Panel 4 Brief'], outputsSv: ['img:p1', 'img:p2', 'img:p3', 'img:p4', 'Panel 4'] },
+    { id: 'p5', title: 'Panel 5 - Context Chain', titleSv: 'Panel 5 - Kontextkedja', model: 'nanobanana', duration: 4500,
+      desc: 'Sub-pixel preserving', descSv: 'Räknar pixlar',
+      outputs: ['img:p1', 'img:p2', 'img:p3', 'img:p4', 'img:p5', 'Panel 5 Brief'], outputsSv: ['img:p1', 'img:p2', 'img:p3', 'img:p4', 'img:p5', 'Panel 5'] },
+    { id: 'p6', title: 'Panel 6 - Full Context', titleSv: 'Panel 6 - Full kontext', model: 'nanobanana', duration: 4500,
+      desc: 'Full-context rendering', descSv: 'Ger allt den har',
+      outputs: ['img:p1', 'img:p2', 'img:p3', 'img:p4', 'img:p5', 'img:p6'], outputsSv: ['img:p1', 'img:p2', 'img:p3', 'img:p4', 'img:p5', 'img:p6'] },
+    { id: 'polish', title: '1M-Token Script Refinement', titleSv: '1M-token manuspolering', model: 'gemini', duration: 3000,
+      desc: 'Million-token polishing', descSv: 'Putsar med miljontoken',
+      outputs: ['img:p1', 'img:p2', 'img:p3', 'img:p4', 'img:p5', 'img:p6', 'Dialogues', 'Narrations', 'Title'],
+      outputsSv: ['img:p1', 'img:p2', 'img:p3', 'img:p4', 'img:p5', 'img:p6', 'Dialoger', 'Berättelser', 'Titel'] },
+    { id: 'voices', title: 'Cloning Voices from LiveKit Call', titleSv: 'Klonar röster från samtalet', model: 'livekit', duration: 5000,
+      desc: 'Voice-cloning', descSv: 'Härmar röster',
+      outputs: ['Participant Voiceprints', 'Character Voice Map', 'Dialogue Audio'],
+      outputsSv: ['Röstavtryck', 'Röstkaraktärskarta', 'Dialogljud'] },
+    { id: 'music', title: 'Original Score Composition', titleSv: 'Originalmusik-komposition', model: 'lyria', duration: 2000,
+      desc: 'Scoring', descSv: 'Komponerar filmmusik',
+      outputs: ['Orchestral Score', 'Ambient Layers'], outputsSv: ['Orkesterpartitur', 'Stämningslager'] },
+    { id: 'cinema', title: 'Final Assembly', titleSv: 'Slutmontering', model: null, duration: 2000,
+      desc: 'Assembling', descSv: 'Sätter ihop allt',
+      outputs: ['Complete Story'], outputsSv: ['Färdig berättelse'] },
   ]
 }
 
@@ -211,8 +217,8 @@ function DataFlow({ sent, sending, outputs, nextColor, imageUrl, panelImages }: 
 
 // ─── Step card ───
 
-function StepCard({ step, isActive, isDone, isPending, imageUrl, prompt, panelImages }: {
-  step: Step; isActive: boolean; isDone: boolean; isPending: boolean; imageUrl: string; prompt?: string; panelImages: Record<string, string>
+function StepCard({ step, isActive, isDone, isPending, imageUrl, prompt, panelImages, sv }: {
+  step: Step; isActive: boolean; isDone: boolean; isPending: boolean; imageUrl: string; prompt?: string; panelImages: Record<string, string>; sv?: boolean
 }) {
   const modelInfo = step.model ? MODELS[step.model] : null
   const color = modelInfo?.color || '#c9a227'
@@ -264,13 +270,13 @@ function StepCard({ step, isActive, isDone, isPending, imageUrl, prompt, panelIm
               <div style={{
                 fontSize: 15, fontWeight: 500, color: isPending ? '#333' : '#999',
                 marginTop: 1,
-              }}>{step.title}</div>
+              }}>{sv ? step.titleSv : step.title}</div>
             </>
           ) : (
             <div style={{
               fontSize: 18, fontWeight: 600, color: isPending ? '#333' : '#ddd',
               fontFamily: "'Space Grotesk', sans-serif",
-            }}>{step.title}</div>
+            }}>{sv ? step.titleSv : step.title}</div>
           )}
         </div>
         {isDone && <span style={{ fontSize: 20, color: '#4ade80', fontWeight: 600 }}>{'\u2713'}</span>}
@@ -288,7 +294,7 @@ function StepCard({ step, isActive, isDone, isPending, imageUrl, prompt, panelIm
       }}>
         {step.id === 'input'
           ? <InputVisual imageUrl={imageUrl} prompt={prompt || ''} isActive={isActive} isDone={isDone} color={color} />
-          : renderVisual(step, isActive, isDone, imageUrl, color, panelImages)}
+          : renderVisual(step, isActive, isDone, imageUrl, color, panelImages, sv)}
       </div>
 
       {/* Description */}
@@ -303,7 +309,7 @@ function StepCard({ step, isActive, isDone, isPending, imageUrl, prompt, panelIm
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
               style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${color}30`, borderTopColor: color, flexShrink: 0 }} />
           )}
-          <span>{step.desc}{isActive && <AnimatedDots color={color} />}</span>
+          <span>{sv ? step.descSv : step.desc}{isActive && <AnimatedDots color={color} />}</span>
         </div>
       )}
 
@@ -316,11 +322,16 @@ function StepCard({ step, isActive, isDone, isPending, imageUrl, prompt, panelIm
         }}>
           <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 600 }}>{'\u2713'}</span>
           <span style={{ fontSize: 13, color: '#555' }}>
-            {step.outputs.filter(o => o.startsWith('img:')).length > 0 &&
-              `${step.outputs.filter(o => o.startsWith('img:')).length} image${step.outputs.filter(o => o.startsWith('img:')).length > 1 ? 's' : ''}`}
-            {step.outputs.filter(o => o.startsWith('img:')).length > 0 && step.outputs.filter(o => !o.startsWith('img:')).length > 0 && ' + '}
-            {step.outputs.filter(o => !o.startsWith('img:')).length > 0 &&
-              `${step.outputs.filter(o => !o.startsWith('img:')).length} output${step.outputs.filter(o => !o.startsWith('img:')).length > 1 ? 's' : ''}`}
+            {(() => {
+              const outs = sv ? step.outputsSv : step.outputs
+              const imgCount = outs.filter(o => o.startsWith('img:')).length
+              const txtCount = outs.filter(o => !o.startsWith('img:')).length
+              return <>
+                {imgCount > 0 && `${imgCount} ${sv ? (imgCount > 1 ? 'bilder' : 'bild') : (imgCount > 1 ? 'images' : 'image')}`}
+                {imgCount > 0 && txtCount > 0 && ' + '}
+                {txtCount > 0 && `${txtCount} ${sv ? 'resultat' : (txtCount > 1 ? 'outputs' : 'output')}`}
+              </>
+            })()}
           </span>
         </div>
       )}
@@ -375,7 +386,7 @@ function getPanelImg(panelNum: number, imageUrl: string, panelImages: Record<str
   return panelImages[`p${panelNum}`] || imageUrl
 }
 
-function renderVisual(step: Step, isActive: boolean, isDone: boolean, imageUrl: string, color: string, panelImages: Record<string, string>) {
+function renderVisual(step: Step, isActive: boolean, isDone: boolean, imageUrl: string, color: string, panelImages: Record<string, string>, sv?: boolean) {
   // 'input' step is handled by InputVisual component directly in StepCard
 
   if (step.id === 'input') return null
@@ -426,9 +437,9 @@ function renderVisual(step: Step, isActive: boolean, isDone: boolean, imageUrl: 
         </div>
         {isActive && (
           <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity }}
-            style={{ fontSize: 14, color, fontWeight: 500 }}>Writing storyboard...</motion.span>
+            style={{ fontSize: 14, color, fontWeight: 500 }}>{sv ? 'Skriver storyboard...' : 'Writing storyboard...'}</motion.span>
         )}
-        {isDone && <span style={{ fontSize: 14, color: '#4ade80', fontWeight: 500 }}>6 panel briefs ready</span>}
+        {isDone && <span style={{ fontSize: 14, color: '#4ade80', fontWeight: 500 }}>{sv ? '6 panelbeskrivningar klara' : '6 panel briefs ready'}</span>}
       </div>
     )
   }
@@ -455,10 +466,10 @@ function renderVisual(step: Step, isActive: boolean, isDone: boolean, imageUrl: 
             <motion.div animate={{ top: ['0%', '100%'] }} transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
               style={{ position: 'absolute', left: 10, right: 10, height: 1, background: `${color}40` }} />
             <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity }}
-              style={{ fontSize: 14, color, fontWeight: 500 }}>Reviewing output...</motion.span>
+              style={{ fontSize: 14, color, fontWeight: 500 }}>{sv ? 'Granskar resultat...' : 'Reviewing output...'}</motion.span>
           </>
         )}
-        {isDone && <span style={{ fontSize: 14, color: '#4ade80', fontWeight: 500 }}>Storyboard updated</span>}
+        {isDone && <span style={{ fontSize: 14, color: '#4ade80', fontWeight: 500 }}>{sv ? 'Storyboard uppdaterad' : 'Storyboard updated'}</span>}
       </div>
     )
   }
@@ -516,7 +527,7 @@ function renderVisual(step: Step, isActive: boolean, isDone: boolean, imageUrl: 
                 ))}
               </div>
               <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity }}
-                style={{ fontSize: 16, fontWeight: 600, color, zIndex: 1 }}>Rendering...</motion.span>
+                style={{ fontSize: 16, fontWeight: 600, color, zIndex: 1 }}>{sv ? 'Renderar...' : 'Rendering...'}</motion.span>
             </>
           ) : (
             <span style={{ color: '#222', fontSize: 32, fontWeight: 700 }}>{num}</span>
@@ -544,9 +555,9 @@ function renderVisual(step: Step, isActive: boolean, isDone: boolean, imageUrl: 
         </div>
         {isActive && (
           <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity }}
-            style={{ fontSize: 14, color, fontWeight: 500 }}>Refining scripts...</motion.span>
+            style={{ fontSize: 14, color, fontWeight: 500 }}>{sv ? 'Förfinar manus...' : 'Refining scripts...'}</motion.span>
         )}
-        {isDone && <span style={{ fontSize: 14, color: '#4ade80', fontWeight: 500 }}>All scripts refined</span>}
+        {isDone && <span style={{ fontSize: 14, color: '#4ade80', fontWeight: 500 }}>{sv ? 'Alla manus förfinade' : 'All scripts refined'}</span>}
       </div>
     )
   }
@@ -598,6 +609,80 @@ function renderVisual(step: Step, isActive: boolean, isDone: boolean, imageUrl: 
     )
   }
 
+  // Voice cloning animation
+  if (step.id === 'voices') {
+    const WAVE_COUNT = 3
+    const chars = ['A', 'B', 'C']
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, width: '100%',
+      }}>
+        {/* Voiceprint waveforms */}
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+          {Array.from({ length: WAVE_COUNT }, (_, ci) => (
+            <div key={ci} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+            }}>
+              {/* Speaker icon */}
+              <div style={{
+                width: 36, height: 36, borderRadius: '50%',
+                background: isDone ? `${color}20` : isActive ? `${color}15` : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${isDone ? '#4ade8030' : isActive ? color + '30' : 'rgba(255,255,255,0.06)'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 13, fontWeight: 700,
+                color: isDone ? '#4ade80' : isActive ? color : '#333',
+              }}>
+                {isDone ? '\u2713' : chars[ci]}
+              </div>
+              {/* Waveform bars */}
+              <div style={{ display: 'flex', gap: 2, alignItems: 'center', height: 32 }}>
+                {Array.from({ length: 8 }, (_, bi) => {
+                  const phase = (bi / 8 + ci * 0.33) * Math.PI * 2
+                  const baseH = 4
+                  const peakH = 10 + Math.sin(phase) * 18
+                  const doneH = 6 + Math.sin(phase * 1.3) * 8
+                  return (
+                    <motion.div key={bi}
+                      animate={isActive ? {
+                        height: [baseH, peakH, baseH * 0.5, peakH * 0.8, baseH],
+                        opacity: [0.5, 1, 0.6, 1, 0.5],
+                      } : {}}
+                      transition={isActive ? {
+                        duration: 0.6 + Math.sin(phase * 2) * 0.3,
+                        repeat: Infinity,
+                        delay: ci * 0.15 + bi * 0.04,
+                      } : {}}
+                      style={{
+                        width: 3, borderRadius: 2, flexShrink: 0,
+                        height: isDone ? doneH : isActive ? baseH : 2,
+                        background: isDone ? `#4ade80` : isActive
+                          ? `linear-gradient(180deg, ${color}, ${color}60)`
+                          : 'rgba(255,255,255,0.05)',
+                        opacity: isDone ? 0.5 : 1,
+                      }}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Status text */}
+        {isActive && (
+          <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity }}
+            style={{ fontSize: 14, color, fontWeight: 500 }}>
+            {sv ? 'Analyserar röstavtryck...' : 'Analyzing voiceprints...'}
+          </motion.span>
+        )}
+        {isDone && (
+          <span style={{ fontSize: 14, color: '#4ade80', fontWeight: 500 }}>
+            {sv ? 'Röster klonade & tilldelade' : 'Voices cloned & assigned'}
+          </span>
+        )}
+      </div>
+    )
+  }
+
   if (step.id === 'cinema') {
     return (
       <div style={{
@@ -621,9 +706,9 @@ function renderVisual(step: Step, isActive: boolean, isDone: boolean, imageUrl: 
           </div>
         ) : isActive ? (
           <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.2, repeat: Infinity }}
-            style={{ fontSize: 18, fontWeight: 600, color: '#c9a227' }}>Assembling...</motion.span>
+            style={{ fontSize: 18, fontWeight: 600, color: '#c9a227' }}>{sv ? 'Monterar...' : 'Assembling...'}</motion.span>
         ) : (
-          <span style={{ color: '#1a1a1a', fontSize: 18, fontWeight: 600 }}>Final</span>
+          <span style={{ color: '#1a1a1a', fontSize: 18, fontWeight: 600 }}>{sv ? 'Slutgiltig' : 'Final'}</span>
         )}
       </div>
     )
@@ -636,7 +721,8 @@ function renderVisual(step: Step, isActive: boolean, isDone: boolean, imageUrl: 
 //  MAIN COMPONENT
 // ═══════════════════════════════════════════════════════
 
-export function GeneratingScreen({ imageUrl, genre, prompt, testMode = false, useHardcodedStory = false, onComplete }: Props) {
+export function GeneratingScreen({ imageUrl, genre, prompt, testMode = false, useHardcodedStory = false, language = 'en', onComplete }: Props) {
+  const sv = language === 'sv'
   const genreConfig = GENRES.find(g => g.id === genre)!
   const STEPS = useRef(buildPipeline()).current
 
@@ -724,7 +810,7 @@ export function GeneratingScreen({ imageUrl, genre, prompt, testMode = false, us
       }
     }
 
-    runPipeline(imageUrl, genre, prompt, handleProgress, useHardcodedStory)
+    runPipeline(imageUrl, genre, prompt, handleProgress, useHardcodedStory, language)
       .then(result => {
         console.log('[GeneratingScreen] Pipeline complete:', result.title)
         setPipelineResult(result)
@@ -830,17 +916,17 @@ export function GeneratingScreen({ imageUrl, genre, prompt, testMode = false, us
           <div style={S.topBar}>
             <div>
               <div style={S.topTitle}>Storybox</div>
-              <div style={S.topSub}>Multimodal AI Pipeline</div>
+              <div style={S.topSub}>{sv ? 'Multimodal AI-rörledning' : 'Multimodal AI Pipeline'}</div>
             </div>
             <div style={S.topCenter}>
-              <span style={S.topLabel}>Step {active + 1}/{STEPS.length}</span>
+              <span style={S.topLabel}>{sv ? 'Steg' : 'Step'} {active + 1}/{STEPS.length}</span>
               <div style={S.progressOuter}>
                 <motion.div animate={{ width: `${progress}%` }} transition={{ duration: 0.3 }} style={S.progressInner} />
               </div>
               <span style={S.topPercent}>{Math.round(progress)}%</span>
             </div>
             <div style={S.topRight}>
-              <span style={S.topLabel}>Time</span>
+              <span style={S.topLabel}>{sv ? 'Tid' : 'Time'}</span>
               <span style={S.topVal}>{(elapsed / 1000).toFixed(1)}s</span>
             </div>
           </div>
@@ -853,12 +939,12 @@ export function GeneratingScreen({ imageUrl, genre, prompt, testMode = false, us
 
               return (
                 <div key={step.id} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                  <StepCard step={step} isActive={isActive} isDone={isDone} isPending={isPending} imageUrl={imageUrl} prompt={prompt} panelImages={panelImages} />
+                  <StepCard step={step} isActive={isActive} isDone={isDone} isPending={isPending} imageUrl={imageUrl} prompt={prompt} panelImages={panelImages} sv={sv} />
                   {i < STEPS.length - 1 && (
                     <DataFlow
                       sent={isDone}
                       sending={isDone && transferring && i === active}
-                      outputs={step.outputs}
+                      outputs={sv ? step.outputsSv : step.outputs}
                       nextColor={STEPS[i+1].model ? MODELS[STEPS[i+1].model!].color : '#c9a227'}
                       imageUrl={imageUrl}
                       panelImages={panelImages}
@@ -871,7 +957,7 @@ export function GeneratingScreen({ imageUrl, genre, prompt, testMode = false, us
 
           <div style={S.bottomBar}>
             <div style={S.botSection}>
-              <span style={S.botLabel}>Panels</span>
+              <span style={S.botLabel}>{sv ? 'Paneler' : 'Panels'}</span>
               <div style={{ display: 'flex', gap: 4 }}>
                 {[1,2,3,4,5,6].map(num => {
                   const stepIdx = STEPS.findIndex(s => s.id === `p${num}`)
@@ -899,26 +985,26 @@ export function GeneratingScreen({ imageUrl, genre, prompt, testMode = false, us
             </div>
 
             <div style={S.botSection}>
-              <span style={S.botLabel}>Scripts</span>
+              <span style={S.botLabel}>{sv ? 'Manus' : 'Scripts'}</span>
               <span style={{ ...S.botVal, color: done.has(STEPS.findIndex(s => s.id === 'polish')) ? '#4db8cc' : '#333' }}>
-                {done.has(STEPS.findIndex(s => s.id === 'polish')) ? '\u2713 Done' : 'Pending'}
+                {done.has(STEPS.findIndex(s => s.id === 'polish')) ? (sv ? '\u2713 Klar' : '\u2713 Done') : (sv ? 'Väntar' : 'Pending')}
               </span>
             </div>
 
             <div style={S.botSection}>
-              <span style={S.botLabel}>Audio</span>
+              <span style={S.botLabel}>{sv ? 'Ljud' : 'Audio'}</span>
               <span style={{ ...S.botVal, color: done.has(STEPS.findIndex(s => s.id === 'music')) ? '#cc5588' : '#333' }}>
-                {done.has(STEPS.findIndex(s => s.id === 'music')) ? '\u2713 Done' : 'Pending'}
+                {done.has(STEPS.findIndex(s => s.id === 'music')) ? (sv ? '\u2713 Klar' : '\u2713 Done') : (sv ? 'Väntar' : 'Pending')}
               </span>
             </div>
 
             <div style={{ ...S.botSection, flex: 2, alignItems: 'flex-start' }}>
-              <span style={S.botLabel}>Current</span>
+              <span style={S.botLabel}>{sv ? 'Aktuellt' : 'Current'}</span>
               <span style={{
                 fontSize: 15, fontWeight: 600,
                 color: STEPS[active].model ? MODELS[STEPS[active].model!].color : '#c9a227',
-              }}>{STEPS[active].title}</span>
-              <span style={{ fontSize: 13, color: '#555', marginTop: 2 }}>{STEPS[active].desc}</span>
+              }}>{sv ? STEPS[active].titleSv : STEPS[active].title}</span>
+              <span style={{ fontSize: 13, color: '#555', marginTop: 2 }}>{sv ? STEPS[active].descSv : STEPS[active].desc}</span>
             </div>
           </div>
         </motion.div>
@@ -955,7 +1041,7 @@ export function GeneratingScreen({ imageUrl, genre, prompt, testMode = false, us
           background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)',
           color: '#ef4444', fontSize: 14, maxWidth: 500, textAlign: 'center',
         }}>
-          Pipeline error: {pipelineError}
+          {sv ? 'Pipeline-fel: ' : 'Pipeline error: '}{pipelineError}
         </div>
       )}
     </motion.div>

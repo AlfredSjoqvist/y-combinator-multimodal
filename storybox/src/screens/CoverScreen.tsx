@@ -1,10 +1,13 @@
 import { motion } from 'framer-motion'
+import type { Language } from '../types'
 
 interface Props {
+  language: Language
+  onLanguageChange: (lang: Language) => void
   onStart: () => void
 }
 
-export function CoverScreen({ onStart }: Props) {
+export function CoverScreen({ language, onLanguageChange, onStart }: Props) {
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -27,8 +30,49 @@ export function CoverScreen({ onStart }: Props) {
         transition={{ duration: 0.5, delay: 0.5 }}
         style={S.tagline}
       >
-        Turn any moment into a cinematic story
+        {language === 'sv'
+          ? 'Förvandla vilket ögonblick som helst till en filmisk historia'
+          : 'Turn any moment into a cinematic story'}
       </motion.p>
+
+      {/* Language selector */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4, delay: 0.65 }}
+        style={S.langRow}
+      >
+        {(['en', 'sv'] as Language[]).map(lang => (
+          <button
+            key={lang}
+            onClick={() => onLanguageChange(lang)}
+            style={{
+              ...S.langBtn,
+              background: language === lang ? 'rgba(201, 162, 39, 0.18)' : 'rgba(255,255,255,0.03)',
+              borderColor: language === lang ? 'rgba(201, 162, 39, 0.5)' : 'rgba(255,255,255,0.08)',
+              color: language === lang ? '#c9a227' : '#666',
+            }}
+          >
+            {lang === 'en' ? (
+              <><span style={{ display: 'inline-flex', width: 20, height: 14, borderRadius: 2, overflow: 'hidden', verticalAlign: 'middle', marginRight: 6 }}>
+                <svg viewBox="0 0 60 30" width="20" height="14">
+                  <rect width="60" height="30" fill="#002868"/>
+                  {[0,1,2,3,4,5,6,7,8,9,10,11,12].map(i=><rect key={i} y={i*30/13} width="60" height={30/13} fill={i%2===0?'#BF0A30':'#fff'}/>)}
+                  <rect width="24" height={30*7/13} fill="#002868"/>
+                </svg>
+              </span> English</>
+            ) : (
+              <><span style={{ display: 'inline-flex', width: 20, height: 14, borderRadius: 2, overflow: 'hidden', verticalAlign: 'middle', marginRight: 6 }}>
+                <svg viewBox="0 0 16 10" width="20" height="14">
+                  <rect width="16" height="10" fill="#006AA7"/>
+                  <rect x="5" width="2" height="10" fill="#FECC02"/>
+                  <rect y="4" width="16" height="2" fill="#FECC02"/>
+                </svg>
+              </span> Svenska</>
+            )}
+          </button>
+        ))}
+      </motion.div>
 
       <motion.button
         initial={{ opacity: 0, y: 20 }}
@@ -39,7 +83,7 @@ export function CoverScreen({ onStart }: Props) {
         onClick={onStart}
         style={S.btn}
       >
-        Let the adventure begin!
+        {language === 'sv' ? 'Låt äventyret börja!' : 'Let the adventure begin!'}
       </motion.button>
 
       <motion.div
@@ -81,8 +125,18 @@ const S: Record<string, React.CSSProperties> = {
   },
   tagline: {
     fontFamily: "'Cinzel', serif",
-    fontSize: 16, color: '#777', fontWeight: 400, marginBottom: 16,
+    fontSize: 16, color: '#777', fontWeight: 400, marginBottom: 4,
     letterSpacing: '0.06em',
+  },
+  langRow: {
+    display: 'flex', gap: 10, marginBottom: 4,
+  },
+  langBtn: {
+    fontFamily: "'Space Grotesk', sans-serif", fontSize: 13, fontWeight: 600,
+    padding: '8px 18px', borderRadius: 10,
+    border: '1px solid', cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    outline: 'none',
   },
   btn: {
     fontFamily: "'Cinzel', serif", fontSize: 18, fontWeight: 700,

@@ -1,14 +1,53 @@
+import { useState } from 'react'
 import { motion } from 'framer-motion'
-import type { StoryResult } from '../types'
+import type { StoryResult, Language } from '../types'
 
 interface Props {
   story: StoryResult
   originalImage?: string
+  language?: Language
   onNewPhoto: () => void
   onReplay: () => void
 }
 
-export function GalleryScreen({ story, onNewPhoto, onReplay }: Props) {
+export function GalleryScreen({ story, language = 'en', onNewPhoto, onReplay }: Props) {
+  const [sharing, setSharing] = useState(false)
+  const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [shareCopied, setShareCopied] = useState(false)
+  const [shareError, setShareError] = useState<string | null>(null)
+
+  const handleShare = async () => {
+    setSharing(true)
+    setShareError(null)
+    try {
+      const base = import.meta.env.BASE_URL || '/storybox/'
+      const resp = await fetch(`${base}api/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(story),
+      })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const data = await resp.json()
+      const url = `${window.location.origin}/storybox/?s=${data.id}${language !== 'en' ? `&lang=${language}` : ''}`
+      setShareUrl(url)
+    } catch (e) {
+      console.error('[Gallery] Share failed:', e)
+      setShareError(language === 'sv' ? 'Kunde inte skapa delningslänk' : 'Failed to create share link')
+    } finally {
+      setSharing(false)
+    }
+  }
+
+  const handleCopyShare = () => {
+    if (!shareUrl) return
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2500)
+    })
+  }
+
+  const sv = language === 'sv'
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -65,6 +104,31 @@ export function GalleryScreen({ story, onNewPhoto, onReplay }: Props) {
         ))}
       </div>
 
+      {/* Share URL display */}
+      {shareUrl && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={styles.shareUrlBox}
+        >
+          <input
+            type="text"
+            readOnly
+            value={shareUrl}
+            style={styles.shareUrlInput}
+            onClick={e => (e.target as HTMLInputElement).select()}
+          />
+          <button onClick={handleCopyShare} style={styles.copyBtn}>
+            {shareCopied ? (sv ? 'Kopierad!' : 'Copied!') : (sv ? 'Kopiera' : 'Copy')}
+          </button>
+        </motion.div>
+      )}
+      {shareError && (
+        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ color: '#ef4444', fontSize: 13, margin: 0 }}>
+          {shareError}
+        </motion.p>
+      )}
+
       {/* Actions */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -73,10 +137,17 @@ export function GalleryScreen({ story, onNewPhoto, onReplay }: Props) {
         style={styles.actions}
       >
         <button onClick={onReplay} style={styles.btnSecondary}>
-          Replay
+          {sv ? 'Spela igen' : 'Replay'}
+        </button>
+        <button onClick={handleShare} disabled={sharing} style={{
+          ...styles.btnSecondary,
+          opacity: sharing ? 0.5 : 1,
+          cursor: sharing ? 'wait' : 'pointer',
+        }}>
+          {sharing ? (sv ? 'Delar...' : 'Sharing...') : (sv ? 'Dela' : 'Share')}
         </button>
         <button onClick={onNewPhoto} style={styles.btnPrimary}>
-          New Storyboard
+          {sv ? 'Ny storyboard' : 'New Storyboard'}
         </button>
       </motion.div>
     </motion.div>
@@ -199,6 +270,37 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'rgba(255, 255, 255, 0.9)',
     lineHeight: 1.4,
     textShadow: '0 1px 4px rgba(0,0,0,0.8), 0 0 12px rgba(0,0,0,0.5)',
+  },
+  shareUrlBox: {
+    display: 'flex',
+    gap: 8,
+    width: '100%',
+    maxWidth: 500,
+  },
+  shareUrlInput: {
+    flex: 1,
+    fontSize: 13,
+    color: '#aaa',
+    fontFamily: 'monospace',
+    background: 'rgba(0,0,0,0.4)',
+    border: '1px solid rgba(201, 162, 39, 0.2)',
+    borderRadius: 8,
+    padding: '8px 12px',
+    outline: 'none',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  copyBtn: {
+    fontFamily: "'Space Grotesk', sans-serif",
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#c9a227',
+    padding: '8px 16px',
+    borderRadius: 8,
+    background: 'rgba(201, 162, 39, 0.1)',
+    border: '1px solid rgba(201, 162, 39, 0.25)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
   actions: {
     display: 'flex',

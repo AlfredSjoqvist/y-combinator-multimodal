@@ -8,7 +8,7 @@
  */
 
 import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai'
-import type { StoryResult, Genre, DialogueLine } from './types'
+import type { StoryResult, Genre, DialogueLine, Language } from './types'
 
 // ─── Config ───
 
@@ -37,11 +37,45 @@ const GEMINI_VOICES: Record<string, string> = {
   'default': 'Puck',
 }
 
-// All available Gemini TTS voice names for unique assignment
-const ALL_VOICES = ['Charon', 'Puck', 'Orus', 'Fenrir', 'Aoede', 'Kore', 'Leda']
+// All available Gemini TTS voice names for unique assignment, grouped by gender
+const MALE_VOICES = ['Puck', 'Charon', 'Orus', 'Fenrir']
+const FEMALE_VOICES = ['Kore', 'Aoede', 'Leda']
+const ALL_VOICES = [...MALE_VOICES, ...FEMALE_VOICES]
 
 // Track which voice is assigned to which speaker (ensures uniqueness)
 const speakerVoiceMap = new Map<string, string>()
+// Track known gender for each speaker (set from scene analysis)
+const speakerGenderMap = new Map<string, 'male' | 'female'>()
+
+/** Register character genders from scene analysis — called before TTS */
+export function registerCharacterGenders(characters: Array<{ name: string; voice_hint: string }>) {
+  speakerGenderMap.clear()
+  for (const c of characters) {
+    const gender = detectGender(c.voice_hint)
+    if (gender) {
+      speakerGenderMap.set(c.name, gender)
+      console.log(`[TTS] Registered gender for ${c.name}: ${gender} (from: "${c.voice_hint}")`)
+    } else {
+      // If voice_hint doesn't clearly indicate gender, default to male
+      // (scene analysis prompt asks for explicit gender in voice_hint, so this is a safety net)
+      speakerGenderMap.set(c.name, 'male')
+      console.log(`[TTS] Registered gender for ${c.name}: male (default, voice_hint: "${c.voice_hint}")`)
+    }
+  }
+}
+
+/** Detect gender from voice hint string */
+function detectGender(voiceHint: string | null): 'male' | 'female' | null {
+  if (!voiceHint) return null
+  const h = voiceHint.toLowerCase()
+  // Check female FIRST (since "female" contains "male")
+  if (h.includes('female') || h.includes('woman') || h.includes('girl') || h.includes('soprano') || h.includes('alto') || h.includes('she ') || h.includes('her ')) return 'female'
+  if (h.includes('male') || h.includes('man ') || h.includes('boy') || h.includes('tenor') || h.includes('baritone') || h.includes('he ') || h.includes('his ')) return 'male'
+  // Check for standalone gender keywords with underscores (e.g. "young_male")
+  if (/_female|_woman/.test(h)) return 'female'
+  if (/_male|_man/.test(h)) return 'male'
+  return null
+}
 
 function assignUniqueVoice(speaker: string, voiceHint: string | null): string {
   // If already assigned, reuse
@@ -51,25 +85,48 @@ function assignUniqueVoice(speaker: string, voiceHint: string | null): string {
   const preferred = pickGeminiVoice(voiceHint)
   const usedVoices = new Set(speakerVoiceMap.values())
 
-  // If preferred is available, use it
-  if (!usedVoices.has(preferred)) {
+  // Use registered gender (from scene analysis) first, fall back to voice hint detection
+  const gender = speakerGenderMap.get(speaker) || detectGender(voiceHint) || 'male'
+  console.log(`[TTS] Gender for ${speaker}: ${gender} (registered=${speakerGenderMap.has(speaker)}, hint="${voiceHint}")`)
+
+  // Ensure preferred voice matches the character's gender
+  const isMale = gender === 'male'
+  const preferredMatchesGender = isMale ? MALE_VOICES.includes(preferred) : FEMALE_VOICES.includes(preferred)
+
+  if (preferredMatchesGender && !usedVoices.has(preferred)) {
     speakerVoiceMap.set(speaker, preferred)
-    console.log(`[TTS] Assigned voice ${preferred} to ${speaker} (from hint)`)
+    console.log(`[TTS] Assigned voice ${preferred} to ${speaker} (from hint, gender=${gender})`)
     return preferred
   }
 
-  // Otherwise pick the first unused voice
-  for (const v of ALL_VOICES) {
+  // Pick first unused voice matching the character's actual gender
+  const correctGenderVoices = isMale ? MALE_VOICES : FEMALE_VOICES
+  for (const v of correctGenderVoices) {
     if (!usedVoices.has(v)) {
       speakerVoiceMap.set(speaker, v)
-      console.log(`[TTS] Assigned voice ${v} to ${speaker} (unique fallback, hint wanted ${preferred})`)
+      console.log(`[TTS] Assigned voice ${v} to ${speaker} (gender-correct fallback, gender=${gender})`)
       return v
     }
   }
 
-  // All voices used — fall back to preferred anyway
-  speakerVoiceMap.set(speaker, preferred)
-  return preferred
+  // All same-gender voices used — reuse least-used same-gender voice
+  const genderVoiceUseCounts = new Map<string, number>()
+  for (const v of correctGenderVoices) {
+    genderVoiceUseCounts.set(v, 0)
+  }
+  for (const v of speakerVoiceMap.values()) {
+    if (genderVoiceUseCounts.has(v)) {
+      genderVoiceUseCounts.set(v, (genderVoiceUseCounts.get(v) || 0) + 1)
+    }
+  }
+  let leastUsed = correctGenderVoices[0]
+  let leastCount = Infinity
+  for (const [v, count] of genderVoiceUseCounts) {
+    if (count < leastCount) { leastUsed = v; leastCount = count }
+  }
+  speakerVoiceMap.set(speaker, leastUsed)
+  console.log(`[TTS] Assigned voice ${leastUsed} to ${speaker} (reused least-used ${gender} voice, all ${gender} voices taken)`)
+  return leastUsed
 }
 
 // ─── Types ───
@@ -155,17 +212,21 @@ function pickGeminiVoice(voiceHint: string | null): string {
   if (!voiceHint) return GEMINI_VOICES['default']
   const hint = voiceHint.toLowerCase()
 
+  // Helper: check if hint indicates male or female (female checked first since "female" contains "male")
+  const isFemale = /\bfemale\b|\bwoman\b|\bgirl\b|\bsoprano\b|\balto\b/.test(hint)
+  const isMale = !isFemale && /\bmale\b|\bman\b|\bboy\b|\btenor\b|\bbaritone\b|_male/.test(hint)
+
   // Try specific combinations first
-  if ((hint.includes('deep') || hint.includes('baritone')) && (hint.includes('male') || hint.includes('man'))) return GEMINI_VOICES['deep_male']
-  if ((hint.includes('young') || hint.includes('energetic')) && (hint.includes('male') || hint.includes('man') || hint.includes('boy'))) return GEMINI_VOICES['young_male']
-  if ((hint.includes('authoritative') || hint.includes('commanding')) && hint.includes('male')) return GEMINI_VOICES['authoritative_male']
-  if ((hint.includes('warm') || hint.includes('confident')) && (hint.includes('female') || hint.includes('woman'))) return GEMINI_VOICES['warm_female']
-  if ((hint.includes('young') || hint.includes('gentle')) && (hint.includes('female') || hint.includes('woman') || hint.includes('girl'))) return GEMINI_VOICES['young_female']
-  if ((hint.includes('mature') || hint.includes('alto')) && (hint.includes('female') || hint.includes('woman'))) return GEMINI_VOICES['mature_female']
+  if (isMale && (hint.includes('deep') || hint.includes('baritone'))) return GEMINI_VOICES['deep_male']
+  if (isMale && (hint.includes('young') || hint.includes('energetic'))) return GEMINI_VOICES['young_male']
+  if (isMale && (hint.includes('authoritative') || hint.includes('commanding'))) return GEMINI_VOICES['authoritative_male']
+  if (isFemale && (hint.includes('warm') || hint.includes('confident'))) return GEMINI_VOICES['warm_female']
+  if (isFemale && (hint.includes('young') || hint.includes('gentle'))) return GEMINI_VOICES['young_female']
+  if (isFemale && (hint.includes('mature') || hint.includes('alto'))) return GEMINI_VOICES['mature_female']
 
   // Gender fallback
-  if (hint.includes('female') || hint.includes('woman') || hint.includes('soprano') || hint.includes('alto')) return GEMINI_VOICES['female']
-  if (hint.includes('male') || hint.includes('man') || hint.includes('tenor') || hint.includes('baritone')) return GEMINI_VOICES['male']
+  if (isFemale) return GEMINI_VOICES['female']
+  if (isMale) return GEMINI_VOICES['male']
 
   return GEMINI_VOICES['default']
 }
@@ -214,12 +275,17 @@ export async function writeStoryboard(
   sceneAnalysis: SceneAnalysis,
   genre: Genre,
   prompt: string,
+  language: Language = 'en',
 ): Promise<StoryboardPanel[]> {
   console.log('[Pipeline] Writing storyboard...')
   const genAI = getGemini()
   const model = getGeminiModel(genAI)
 
-  const storyboardPrompt = `You are a master cinematic storyteller creating a 6-panel photorealistic storyboard. Your stories transform mundane moments into extraordinary adventures.
+  const langInstruction = language === 'sv'
+    ? `\n\nLANGUAGE: Write ALL dialogue text and narration text in SWEDISH (Svenska). Scene descriptions must remain in English (they are used for image generation). Only the "text" field in dialogues and the "narration" field should be in Swedish.\n`
+    : ''
+
+  const storyboardPrompt = `You are a master cinematic storyteller creating a 6-panel photorealistic storyboard. Your stories transform mundane moments into extraordinary adventures.${langInstruction}
 
 Scene analysis: ${JSON.stringify(sceneAnalysis)}
 Genre: ${genre}
@@ -281,6 +347,7 @@ export async function generatePanel(
   artStyle: string,
   panelNumber: number,
   referenceImageDataUrl: string,
+  previousPanelImageUrl?: string,
 ): Promise<string> {
   console.log(`[Pipeline] Generating panel ${panelNumber}...`)
   const genAI = getGemini()
@@ -292,22 +359,29 @@ Photography style: ${artStyle}
 
 SCENE (panel ${panelNumber} of 6): ${panelDesc}
 
-CHARACTER REFERENCE — The people in this photo MUST look IDENTICAL to the people in the reference photo:
+CHARACTER REFERENCE — The people in this photo MUST look IDENTICAL to the people in the reference photo${previousPanelImageUrl ? ' and the previous panel' : ''}:
 ${characterDescBlock}
 
 CRITICAL REQUIREMENTS:
 - This must look like a REAL PHOTOGRAPH taken by a professional photographer — NOT an illustration, painting, or comic
 - The people must look EXACTLY like the reference photo — same face, same hair, same clothing, same build
+- EVERY CHARACTER must maintain their EXACT appearance: same hairstyle, same hair color, same facial features, same skin tone, same clothing items, same body type. Do NOT change ANY of these between panels.
 - Natural lighting, realistic textures, photographic depth of field
 - The scene must feel like a real moment captured on camera
 - Cinematic composition — the kind of striking photo that tells a story
 - IMPORTANT: This scene must look VISUALLY DIFFERENT from the reference photo — different camera angle, different environment, different action, different lighting. The ONLY thing that stays the same are the characters' appearances.
 - The setting and action described in the SCENE must be clearly visible. Do NOT just reproduce the reference photo.`
 
-  const result = await model.generateContent([
+  const contentParts: any[] = [
     prompt,
     dataUrlToInlineData(referenceImageDataUrl),
-  ])
+  ]
+  // Pass the most recently generated panel as additional reference for character consistency
+  if (previousPanelImageUrl && previousPanelImageUrl !== referenceImageDataUrl) {
+    contentParts.push(dataUrlToInlineData(previousPanelImageUrl))
+  }
+
+  const result = await model.generateContent(contentParts)
 
   // Extract image from response
   const response = result.response
@@ -329,10 +403,14 @@ CRITICAL REQUIREMENTS:
   // Retry once before falling back
   console.warn(`[Pipeline] Panel ${panelNumber}: No image in first attempt, retrying...`)
   try {
-    const retry = await model.generateContent([
+    const retryParts: any[] = [
       prompt + '\n\nYou MUST output an image. Generate the photograph now.',
       dataUrlToInlineData(referenceImageDataUrl),
-    ])
+    ]
+    if (previousPanelImageUrl && previousPanelImageUrl !== referenceImageDataUrl) {
+      retryParts.push(dataUrlToInlineData(previousPanelImageUrl))
+    }
+    const retry = await model.generateContent(retryParts)
     const retryCandidates = retry.response.candidates
     if (retryCandidates && retryCandidates.length > 0) {
       for (const part of retryCandidates[0].content.parts) {
@@ -397,12 +475,17 @@ export async function polishScripts(
   storyboard: StoryboardPanel[],
   sceneAnalysis: SceneAnalysis,
   genre: Genre,
+  language: Language = 'en',
 ): Promise<{ title: string; panels: Array<{ dialogues: Array<{ speaker: string; text: string; voice_hint: string }>; narration: string | null }> }> {
   console.log('[Pipeline] Polishing scripts...')
   const genAI = getGemini()
   const model = getGeminiModel(genAI)
 
-  const prompt = `You are a script editor for a cinematic ${genre} photo story. Polish the dialogue and narration for maximum impact. Also create a compelling title.
+  const langInstruction = language === 'sv'
+    ? ` All dialogue text and narration must be in SWEDISH (Svenska). The title should also be in Swedish.`
+    : ''
+
+  const prompt = `You are a script editor for a cinematic ${genre} photo story. Polish the dialogue and narration for maximum impact. Also create a compelling title.${langInstruction}
 
 The audience has NO prior context. They see 6 photos as a slideshow with narration overlaid. The narration must tell a complete, self-contained story.
 
@@ -488,9 +571,12 @@ export async function generateDialogueAudio(
   text: string,
   voiceHint: string | null,
   speaker: string,
+  language: Language = 'en',
 ): Promise<string | null> {
   const voiceName = assignUniqueVoice(speaker, voiceHint)
   console.log(`[Pipeline] Generating TTS for ${speaker} with voice ${voiceName}: "${text}"`)
+
+  const langNote = language === 'sv' ? ' The line is in Swedish — pronounce it naturally in Swedish.' : ''
 
   // Try multiple TTS-capable models
   const ttsModels = ['gemini-2.5-flash-preview-tts', 'gemini-2.0-flash']
@@ -498,7 +584,7 @@ export async function generateDialogueAudio(
   for (const modelName of ttsModels) {
     try {
       const requestBody = {
-        contents: [{ parts: [{ text: `Say this line as ${speaker}, a character in a cinematic story. Deliver it with emotion and natural inflection:\n\n"${text}"` }] }],
+        contents: [{ parts: [{ text: `Say this line as ${speaker}, a character in a cinematic story. Deliver it with emotion and natural inflection.${langNote}\n\n"${text}"` }] }],
         generationConfig: {
           responseModalities: ['AUDIO'],
           speechConfig: {
@@ -569,6 +655,7 @@ export async function generateDialogueAudio(
 /** Generate audio for all dialogue lines across all panels */
 export async function generateAllDialogueAudio(
   panels: Array<{ dialogues: Array<{ speaker: string; text: string; voice_hint: string }> }>,
+  language: Language = 'en',
 ): Promise<Map<string, string>> {
   const audioMap = new Map<string, string>() // key: "panelIdx-dialogueIdx"
 
@@ -579,7 +666,7 @@ export async function generateAllDialogueAudio(
       const d = panel.dialogues[di]
       const key = `${pi}-${di}`
       try {
-        const audioUrl = await generateDialogueAudio(d.text, d.voice_hint, d.speaker)
+        const audioUrl = await generateDialogueAudio(d.text, d.voice_hint, d.speaker, language)
         if (audioUrl) {
           audioMap.set(key, audioUrl)
         }
@@ -869,11 +956,13 @@ export async function runPipeline(
   prompt: string,
   onProgress: (progress: PipelineProgress) => void,
   useHardcodedStory = false,
+  language: Language = 'en',
 ): Promise<StoryResult> {
   const artStyle = GENRE_STYLES[genre] || GENRE_STYLES.adventure
 
   // Reset voice assignments for each new pipeline run
   speakerVoiceMap.clear()
+  speakerGenderMap.clear()
 
   // Step 1: Initialize
   onProgress({ stepId: 'input', status: 'start' })
@@ -891,6 +980,9 @@ export async function runPipeline(
     throw e
   }
   onProgress({ stepId: 'scan', status: 'done', data: sceneAnalysis })
+
+  // Register character genders from scene analysis for accurate TTS voice assignment
+  registerCharacterGenders(sceneAnalysis.characters)
 
   // Build character description block for NanoBanana prompts
   const characterBlock = sceneAnalysis.characters.map(c =>
@@ -929,7 +1021,7 @@ export async function runPipeline(
     await new Promise(r => setTimeout(r, 500))
   } else {
     try {
-      storyboard = await writeStoryboard(sceneAnalysis, genre, prompt)
+      storyboard = await writeStoryboard(sceneAnalysis, genre, prompt, language)
     } catch (e) {
       console.error('[Pipeline] Storyboard failed:', e)
       onProgress({ stepId: 'storyboard', status: 'error', data: e })
@@ -953,12 +1045,15 @@ export async function runPipeline(
       await new Promise(r => setTimeout(r, 500))
     } else {
       try {
+        // Pass the most recently generated panel as additional visual reference
+        const prevPanelImage = panelImages.length > 0 ? panelImages[panelImages.length - 1] : undefined
         const imageUrl = await generatePanel(
           currentBriefs[i],
           characterBlock,
           artStyle,
           i + 1,
           imageDataUrl,
+          prevPanelImage,
         )
         panelImages.push(imageUrl)
       } catch (e) {
@@ -999,6 +1094,22 @@ export async function runPipeline(
       }
       onProgress({ stepId: 'r2', status: 'done' })
     }
+
+    // Additional consistency review after panel 3 to prevent drift in panels 4-6
+    if (i === 2) {
+      console.log('[Pipeline] Running mid-generation consistency review after panel 3...')
+      try {
+        const review = await reviewConsistency(panelImages, storyboard, sceneAnalysis)
+        if (review.adjustedBriefs && review.adjustedBriefs.length > 0) {
+          for (let j = 0; j < review.adjustedBriefs.length && (j + i + 1) < 6; j++) {
+            currentBriefs[j + i + 1] = review.adjustedBriefs[j]
+          }
+          console.log('[Pipeline] Updated briefs for panels 4-6 with consistency adjustments')
+        }
+      } catch (e) {
+        console.warn('[Pipeline] Mid-gen review failed, continuing:', e)
+      }
+    }
   }
 
   // Step 10: Script polish (Gemini) — skip if hardcoded (scripts are already final)
@@ -1010,7 +1121,7 @@ export async function runPipeline(
   }))
   if (!useHardcodedStory) {
     try {
-      const polished = await polishScripts(storyboard, sceneAnalysis, genre)
+      const polished = await polishScripts(storyboard, sceneAnalysis, genre, language)
       title = polished.title
       polishedPanels = polished.panels
     } catch (e) {
@@ -1024,15 +1135,18 @@ export async function runPipeline(
   polishedPanels.forEach((p, i) => {
     if (!p.narration) {
       const fallback = i === 0
-        ? 'It all began on an ordinary day...'
-        : `And so the story continued...`
+        ? (language === 'sv' ? 'Allt började en vanlig dag...' : 'It all began on an ordinary day...')
+        : (language === 'sv' ? 'Och så fortsatte historien...' : `And so the story continued...`)
       console.warn(`[Pipeline] Panel ${i + 1} missing narration, using fallback`)
       p.narration = fallback
     }
-    // Cap narration length — max ~25 words / 120 chars
-    if (p.narration && p.narration.length > 120) {
+    // Cap narration length — max ~50 words / 250 chars
+    if (p.narration && p.narration.length > 250) {
       console.warn(`[Pipeline] Panel ${i + 1} narration too long (${p.narration.length}), truncating`)
-      p.narration = p.narration.slice(0, 117) + '...'
+      // Truncate at last complete word before limit
+      const trimmed = p.narration.slice(0, 247)
+      const lastSpace = trimmed.lastIndexOf(' ')
+      p.narration = (lastSpace > 200 ? trimmed.slice(0, lastSpace) : trimmed) + '...'
     }
   })
   onProgress({ stepId: 'polish', status: 'done', data: { title, polishedPanels } })
@@ -1041,7 +1155,7 @@ export async function runPipeline(
   onProgress({ stepId: 'voices', status: 'start' })
   let audioMap = new Map<string, string>()
   try {
-    audioMap = await generateAllDialogueAudio(polishedPanels)
+    audioMap = await generateAllDialogueAudio(polishedPanels, language)
   } catch (e) {
     console.warn('[Pipeline] Dialogue audio generation failed:', e)
   }

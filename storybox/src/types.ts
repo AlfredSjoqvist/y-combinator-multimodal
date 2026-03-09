@@ -1,4 +1,5 @@
 export type Genre = 'adventure' | 'noir' | 'comedy' | 'sci-fi' | 'romance' | 'ghibli'
+export type Language = 'en' | 'sv'
 
 export interface GenreConfig {
   id: Genre

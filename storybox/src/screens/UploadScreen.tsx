@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import type { RemoteTrack } from 'livekit-client'
+import type { Language } from '../types'
 
 interface Props {
   videoTrack: RemoteTrack | null
@@ -10,10 +11,12 @@ interface Props {
   onTakePicture: (imageDataUrl: string) => void
   uploadedImage: string | null
   onCreateAdventure: () => void
+  language?: Language
   phoneUrl: string
 }
 
-export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConceptChange, onTakePicture, uploadedImage, onCreateAdventure, phoneUrl }: Props) {
+export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConceptChange, onTakePicture, uploadedImage, onCreateAdventure, language = 'en', phoneUrl }: Props) {
+  const sv = language === 'sv'
   const videoRef = useRef<HTMLVideoElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [flash, setFlash] = useState(false)
@@ -101,7 +104,7 @@ export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConce
         transition={{ duration: 0.4, delay: 0.2 }}
         style={S.subtitle}
       >
-        Talk to The Sage or type your story concept. Take a picture when ready.
+        {sv ? 'Prata med Den Vise eller skriv ditt berättelsekoncept. Ta en bild när du är redo.' : 'Talk to The Sage or type your story concept. Take a picture when ready.'}
       </motion.p>
 
       {/* Main content: video + story concept side by side */}
@@ -148,7 +151,7 @@ export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConce
                 <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
               </svg>
               <p style={{ fontSize: 13, color: '#555', fontWeight: 500, margin: 0 }}>
-                {connected ? 'Waiting for camera...' : 'No LiveKit connection'}
+                {connected ? (sv ? 'Väntar på kamera...' : 'Waiting for camera...') : (sv ? 'Ingen LiveKit-anslutning' : 'No LiveKit connection')}
               </p>
             </div>
           )}
@@ -162,7 +165,7 @@ export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConce
 
           {/* Snap hint */}
           {videoTrack && !uploadedImage && (
-            <div style={S.snapHint}>Press <kbd style={S.kbd}>J</kbd> to snap</div>
+            <div style={S.snapHint}>{sv ? 'Tryck' : 'Press'} <kbd style={S.kbd}>J</kbd> {sv ? 'för att fånga' : 'to snap'}</div>
           )}
 
           {/* Clear photo button */}
@@ -171,22 +174,22 @@ export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConce
               onClick={() => onTakePicture('')}
               style={S.newPhotoBtn}
             >
-              New Photo
+              {sv ? 'Nytt foto' : 'New Photo'}
             </button>
           )}
         </div>
 
         {/* Editable story concept panel */}
         <div style={S.summaryPanel}>
-          <div style={S.summaryLabel}>Story Concept</div>
+          <div style={S.summaryLabel}>{sv ? 'Berättelsekoncept' : 'Story Concept'}</div>
           <textarea
             value={storyConcept}
             onChange={e => onStoryConceptChange(e.target.value)}
-            placeholder="Describe your visual story here... The Sage will also update this as you talk."
+            placeholder={sv ? 'Beskriv din visuella berättelse här... Den Vise uppdaterar detta när du pratar.' : 'Describe your visual story here... The Sage will also update this as you talk.'}
             style={S.textarea}
           />
           <div style={S.summaryHint}>
-            The Sage listens and summarizes here. You can also edit directly.
+            {sv ? 'Den Vise lyssnar och sammanfattar här. Du kan också redigera direkt.' : 'The Sage listens and summarizes here. You can also edit directly.'}
           </div>
 
         </div>
@@ -217,7 +220,7 @@ export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConce
             <polyline points="17 8 12 3 7 8" />
             <line x1="12" y1="3" x2="12" y2="15" />
           </svg>
-          Upload Image
+          {sv ? 'Ladda upp bild' : 'Upload Image'}
         </motion.button>
         {videoTrack && (
           <motion.button
@@ -230,7 +233,7 @@ export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConce
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
               <circle cx="12" cy="13" r="4" />
             </svg>
-            Snap Photo
+            {sv ? 'Ta foto' : 'Snap Photo'}
           </motion.button>
         )}
         <motion.button
@@ -246,7 +249,7 @@ export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConce
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
           </svg>
-          Create Adventure
+          {sv ? 'Skapa äventyr' : 'Create Adventure'}
         </motion.button>
       </motion.div>
 
@@ -258,7 +261,7 @@ export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConce
           transition={{ delay: 0.6 }}
           style={S.phoneUrlBox}
         >
-          <div style={S.phoneUrlLabel}>Join from phone with LiveKit (camera + mic)</div>
+          <div style={S.phoneUrlLabel}>{sv ? 'Anslut från telefon med LiveKit (kamera + mikrofon)' : 'Join from phone with LiveKit (camera + mic)'}</div>
           <div style={S.phoneUrlRow}>
             <input
               type="text"
@@ -268,7 +271,7 @@ export function UploadScreen({ videoTrack, connected, storyConcept, onStoryConce
               onClick={e => (e.target as HTMLInputElement).select()}
             />
             <button onClick={handleCopyUrl} style={S.copyBtn}>
-              {copied ? 'Copied!' : 'Copy'}
+              {copied ? (sv ? 'Kopierad!' : 'Copied!') : (sv ? 'Kopiera' : 'Copy')}
             </button>
           </div>
         </motion.div>

@@ -7,18 +7,47 @@ import { PlaybackScreen } from './screens/PlaybackScreen'
 import { GalleryScreen } from './screens/GalleryScreen'
 import { useLiveKit } from './useLiveKit'
 import { DebugConsole } from './DebugConsole'
-import type { StoryResult } from './types'
+import type { StoryResult, Language } from './types'
 import './App.css'
 
-type Screen = 'cover' | 'upload' | 'generating' | 'playback' | 'gallery'
+type Screen = 'cover' | 'upload' | 'generating' | 'playback' | 'gallery' | 'loading'
+
+// Detect share params synchronously to avoid cover screen flash
+const _initParams = new URLSearchParams(window.location.search)
+const _hasShare = _initParams.has('s')
+const _initLang = (_initParams.get('lang') as Language) || 'en'
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('cover')
+  const [screen, setScreen] = useState<Screen>(_hasShare ? 'loading' : 'cover')
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
   const [storyPrompt, setStoryPrompt] = useState<string>('')
   const [storyResult, setStoryResult] = useState<StoryResult | null>(null)
   const [testMode, setTestMode] = useState(false)
   const [useHardcodedStory, setUseHardcodedStory] = useState(false)
+  const [language, setLanguage] = useState<Language>(_initLang)
+
+  // Check for shared story in URL on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const shareId = params.get('s')
+    const lang = params.get('lang') as Language | null
+    if (lang) setLanguage(lang)
+    if (shareId && /^[a-zA-Z0-9_-]+$/.test(shareId)) {
+      console.log('[App] Loading shared story:', shareId)
+      fetch(`${import.meta.env.BASE_URL}shared/${shareId}.json`)
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+        .then((result: StoryResult) => {
+          console.log('[App] Loaded shared story:', result.title)
+          setStoryResult(result)
+          setUploadedImage(result.panels[0]?.imageUrl || null)
+          setScreen('playback')
+        })
+        .catch(e => {
+          console.error('[App] Failed to load shared story:', e)
+          setScreen('cover')
+        })
+    }
+  }, [])
 
   // LiveKit connection - reads from URL params, falling back to env vars
   const lkParams = useMemo(() => {
@@ -64,33 +93,7 @@ export default function App() {
     }
   }, [lastCommand])
 
-  // "G" key = load demo image + run with hardcoded storyboard
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'g' || e.key === 'G') {
-        // Only trigger from upload or cover screen
-        if (screen !== 'upload' && screen !== 'cover') return
-        console.log('[App] G pressed — launching hardcoded storyboard mode')
-        // Load demo image and start pipeline with hardcoded story
-        fetch(`${import.meta.env.BASE_URL}demo-input.jpg`)
-          .then(r => r.blob())
-          .then(blob => {
-            const reader = new FileReader()
-            reader.onload = () => {
-              setUploadedImage(reader.result as string)
-              setStoryPrompt('Hackathon dragon quest — hardcoded demo')
-              setTestMode(false)
-              setUseHardcodedStory(true)
-              setScreen('generating')
-            }
-            reader.readAsDataURL(blob)
-          })
-          .catch(err => console.error('[App] Failed to load demo image for G-mode:', err))
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [screen])
+
 
   const handleStart = useCallback(() => {
     setScreen('upload')
@@ -252,8 +255,8 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* LiveKit connection indicator */}
-      {!!lkParams.url && (
+      {/* LiveKit connection indicator — only on cover/upload screens */}
+      {!!lkParams.url && (screen === 'cover' || screen === 'upload') && (
         <div style={{
           position: 'fixed', top: 12, right: 16, zIndex: 1000,
           display: 'flex', alignItems: 'center', gap: 8,
@@ -267,15 +270,20 @@ export default function App() {
             boxShadow: connected ? '0 0 6px #4ade80' : '0 0 6px #ef4444',
           }} />
           <span style={{ fontSize: 12, color: '#888', fontWeight: 500 }}>
-            {connected ? 'Sage Connected' : 'Connecting...'}
+            {connected ? (language === 'sv' ? 'Den Vise ansluten' : 'Sage Connected') : (language === 'sv' ? 'Ansluter...' : 'Connecting...')}
           </span>
         </div>
       )}
 
       <AnimatePresence mode="wait">
+        {screen === 'loading' && (
+          <div key="loading" style={{ width: '100%', height: '100%', background: '#0a0908' }} />
+        )}
         {screen === 'cover' && (
           <CoverScreen
             key="cover"
+            language={language}
+            onLanguageChange={setLanguage}
             onStart={handleStart}
           />
         )}
@@ -289,6 +297,7 @@ export default function App() {
             onTakePicture={handleTakePicture}
             uploadedImage={uploadedImage}
             onCreateAdventure={handleCreateAdventure}
+            language={language}
             phoneUrl={`https://meet.livekit.io/custom?liveKitUrl=${encodeURIComponent(lkParams.url)}&token=${import.meta.env.VITE_PHONE_TOKEN || ''}`}
           />
         )}
@@ -300,6 +309,7 @@ export default function App() {
             prompt={storyPrompt}
             testMode={testMode}
             useHardcodedStory={useHardcodedStory}
+            language={language}
             onComplete={handleGenerationComplete}
           />
         )}
@@ -308,6 +318,7 @@ export default function App() {
             key="playback"
             story={storyResult}
             sendToAgent={sendToAgent}
+            language={language}
             onComplete={handlePlaybackComplete}
           />
         )}
@@ -316,6 +327,7 @@ export default function App() {
             key="gallery"
             story={storyResult}
             originalImage={uploadedImage}
+            language={language}
             onNewPhoto={handleNewPhoto}
             onReplay={handleReplay}
           />
