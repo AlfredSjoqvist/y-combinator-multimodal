@@ -1,6 +1,6 @@
 # Storybox
 
-**Upload one photo, get back a cinematic visual story — with voice, music, and AI-generated art — in under 90 seconds.**
+**Upload one photo, get back a cinematic visual story — with voice, music, and AI-generated art.**
 
 Storybox is a multimodal storytelling engine built at the YC x Google DeepMind Multimodal Frontier Hackathon (March 2026). It combines four AI systems into a single seamless pipeline: a real-time voice agent that helps you shape your story concept, a vision model that analyzes your photo, an image generator that creates character-consistent panels, and a music model that scores the whole thing.
 
